@@ -1,0 +1,14 @@
+{
+	"files": [
+	
+	],
+	"classes": [
+
+	],
+	"scenes": [
+
+	],
+	"scene_nodes": {
+		"Main_Menu": ["HBox.*"]
+	},
+}
