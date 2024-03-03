@@ -1,4 +1,5 @@
 from typing import OrderedDict
+from pathlib import Path
 
 
 class State:
@@ -13,16 +14,14 @@ class State:
         The number of errors encountered
     num_warnings : int
         The number of warnings encountered
-    classes : OrderedDict[str, ClassDef]
+    classes : OrderedDict[str, ScriptDef]
         Stores the Godot project's classes. The keys are the name of the class,
-        and the values are `ClassDef` objects
+        and the values are `ScriptDef` objects
+    scripts : OrderedDict[str, ScriptDef]
+        Stores scripts which are appended to scenes rather than defining their
+        own classes.
     scenes : OrderedDict[str, SceneDef]
-        Stores all of the scenes. The keys are the name of the scene, and
-        the values are `SceneDef` objects
-    scripts : dict[str, xml.etree.ElementTree]
-        Stores all of the scripts in the projects which do not define a class.
-        The keys are the path to the script from res://, and the values are
-        parsed XML trees.
+        Stores scene trees.
     '''
     def __init__(self) -> None:
         self.num_errors = 0
@@ -30,10 +29,6 @@ class State:
         self.classes: OrderedDict = OrderedDict()
         self.scripts: OrderedDict = OrderedDict()
         self.scenes: OrderedDict = OrderedDict()
-        self.current_class: str = ""
-
-        # Additional content and structure checks and validators.
-        # self.script_language_parity_check: ScriptLanguageParityCheck = ScriptLanguageParityCheck()
 
     def sort_classes(self) -> None:
         '''
