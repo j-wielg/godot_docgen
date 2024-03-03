@@ -35,8 +35,6 @@ class ScriptDef(DefinitionBase):
 
     Parameters
     ----------
-    name : str
-        The name of the class
     state : State
         The global state of the program
 
@@ -44,20 +42,20 @@ class ScriptDef(DefinitionBase):
     ----------
     class_group : ScriptGroups
         The type of object that the class represents.
-    constants: OrderedDict[str, ConstantDef]
-    enums: OrderedDict[str, EnumDef]
-    properties: OrderedDict[str, PropertyDef]
-    constructors: OrderedDict[str, list[MethodDef]]
-    methods: OrderedDict[str, list[MethodDef]]
-    operators: OrderedDict[str, list[MethodDef]]
-    signals: OrderedDict[str, SignalDef]
-    annotations: OrderedDict[str, list[AnnotationDef]]
-    theme_items: OrderedDict[str, ThemeItemDef]
-    inherits: Optional[str]
-    brief_description: Optional[str]
-    description: Optional[str]
-    tutorials: list[tuple[str, str]]
-    keywords: Optional[str]
+    constants : OrderedDict[str, ConstantDef]
+    enums : OrderedDict[str, EnumDef]
+    properties : OrderedDict[str, PropertyDef]
+    constructors : OrderedDict[str, list[MethodDef]]
+    methods : OrderedDict[str, list[MethodDef]]
+    operators : OrderedDict[str, list[MethodDef]]
+    signals : OrderedDict[str, SignalDef]
+    annotations : OrderedDict[str, list[AnnotationDef]]
+    theme_items : OrderedDict[str, ThemeItemDef]
+    inherits : Optional[str]
+    brief_description : Optional[str]
+    description : Optional[str]
+    tutorials : list[tuple[str, str]]
+    keywords : Optional[str]
     '''
     script_pattern = re.compile('"?[\w /]+\.gd"?')
 
@@ -209,7 +207,7 @@ class ScriptDef(DefinitionBase):
                     if enum in self.enums:
                         enum_def = self.enums[enum]
                     else:
-                        enum_def = EnumDef(enum, constant_def.is_bitfield)
+                        enum_def = EnumDef(enum, constant_def.bitfield)
                         self.enums[enum_def.name] = enum_def
                     enum_def.values[constant_def.name] = constant_def
         # Searches for annotations
