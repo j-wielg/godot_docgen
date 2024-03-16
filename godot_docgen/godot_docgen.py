@@ -1,6 +1,6 @@
 from state import State
 import definitions
-from scenedef import SceneDef, NodeDef
+from scenedef import SceneDef, NodeDef, ScenesNotParsed
 from scriptdef import ScriptDef, ScriptGroups
 from pathlib import Path
 
@@ -26,7 +26,8 @@ def load_files(state: State, path: Path):
     '''
     unvisited: list[Path] = [path]
     xml: set[Path] = set()
-    tscn: set[Path] = set()
+    tscn: list[Path] = []
+    path = path.resolve()
     # Finds all relevant files
     while unvisited:
         file = unvisited.pop()
@@ -36,7 +37,7 @@ def load_files(state: State, path: Path):
             xml.add(file)
         # Finds the scene files
         elif filename.endswith('.tscn'):
-            tscn.add(file)
+            tscn.append(file)
         # Opens folders
         if file.is_dir():
             for subfile in file.iterdir():
@@ -47,9 +48,14 @@ def load_files(state: State, path: Path):
         script = ScriptDef(state)
         script.parse_file(str(script_path))
     # Generates scene objects and adds them to the state
-    for scene_path in tscn:
-        print(scene_path)
+    while tscn:
+        scene_path = tscn.pop()
         scene = SceneDef(state)
-        with open(scene_path, 'rt') as scene_file:
-            scene.parse_file(scene_file)
-        state.scenes[scene_path.name[:-5]] = scene
+        try:
+            with open(scene_path, 'rt') as scene_file:
+                scene.parse_file(scene_file)
+        except ScenesNotParsed:
+            tscn.insert(0, scene_path)
+            continue
+        scene_path = str(scene_path.relative_to(path))
+        state.scenes['res://' + scene_path] = scene

@@ -41,6 +41,29 @@ def tscn_to_dict(line: str) -> dict:
     return d
 
 
+class ScenesNotParsed(Exception):
+    '''
+    An exception which is raised when a scene relies on external scenes
+    which have not yet been parsed.
+    '''
+    pass
+
+
+class NodeExists(Exception):
+    '''
+    An exception which is raised when a scene attempts to create a node which
+    is already in the scene tree
+
+    Parameters
+    ----------
+    path : str
+        The path in the node map which already exists.
+    '''
+
+    def __init__(self, path: str):
+        self.path = path
+
+
 class ConnectionDef(DefinitionBase):
     '''
     Documents an instantiated signal in a scene.
@@ -72,8 +95,6 @@ class NodeDef(DefinitionBase):
     ----------
     children : list[NodeDef]
         A list of children of the node.
-    parent : Optional[NodeDef]
-        The parent of the node in the scene tree.
     script_path : Optional[str]
         Path to the script attached to this node, if one exists.
     script : Optional[ScriptDef]
@@ -83,12 +104,12 @@ class NodeDef(DefinitionBase):
     state : State
     '''
     children: list['NodeDef']
-    parent: 'NodeDef' = None
     script_path: str = None
     script: ScriptDef = None
     type_name: TypeName = None
     state: State
     resources: list
+    shared: bool = False
 
     def __init__(self, state: State):
         self.children = []
@@ -125,36 +146,62 @@ class NodeDef(DefinitionBase):
             line = file.readline()
         if not line.startswith('[node'):  # ]
             return line
-        # Gets the node's name
         node_info = tscn_to_dict(line)
+        # Gets the node's name
         super().__init__('node', node_info['name'])
-        # Sets the node's parent
-        if (parent := node_info.get('parent')) is not None:
-            self.parent = node_map[parent]
+        # Finds the node's parent
+        parent = node_info.get('parent')
+        # Gets the path to the node
+        path = None
+        if parent is None:
+            path = '.'
+        elif parent == '.':
+            path = self.name
+        else:
+            path = f'{parent}/{self.name}'
+        # Checks if this node is an instance override
+        if path in node_map:
+            raise NodeExists(path)
+        node_map[path] = self
+        if parent is not None:
             node_map[parent].children.append(self)
-            if parent != '.':
-                path = f'{parent}/{self.name}'
-            else:
-                path = self.name
-            node_map[path] = self
         # Gets the node's type
         type_name: str = node_info.get('type')
         if type_name is not None:
             self.type_name = TypeName(type_name)
-        # If there is no type, then it is an instance of a scene
-        else:
+        # Otherwise, checks if the node is an instance of a scene
+        elif 'instance' in node_info:
             self.definition_name = 'scene'
             id = node_info['instance']
             start = id.find('"') + 1
             end = id.find('"', start)
             id = id[start:end]
-            path = ext_res_map[id].path
-            type_name = path.split('/')[-1]
-            print(path)
-            if not type_name.endswith('.tscn'):
-                # TODO: Raise exception
-                return
-            self.type_name = TypeName(type_name[:-5])
+            scene: NodeDef = ext_res_map[id].scene.root
+            # Copies the data of the other scene
+            self.type_name = scene.type_name
+            self.script = scene.script
+            self.script_path = scene.script_path
+            self.deprecated = scene.deprecated
+            self.experimental = scene.experimental
+            # Shallow copies resources and children
+            for resource in scene.resources:
+                self.resources.append(resource)
+            for child in scene.children:
+                self.children.append(child)
+            # Does a depth-first walk through the children to add them
+            # to the node map with the correct path
+            frontier: list[tuple[str, NodeDef]] = [(path, self)]
+            while frontier:
+                parent, node = frontier.pop()
+                if parent is None:
+                    parent = '.'
+                node_map[parent] = node
+                for child in node.children:
+                    if parent == '.':
+                        path = child.name
+                    else:
+                        path = f'{parent}/{child.name}'
+                    frontier.append((path, child))
         # Reads the rest of the lines
         while line := file.readline().strip():
             # Checks for scripts
@@ -191,6 +238,10 @@ class SceneDef(DefinitionBase):
         The root of the scene tree.
     state : State
         The state of the parsing program.
+    external_scenes : dict[str, SceneDef]
+        List of external scenes that this scene relies on.
+    signals : dict[str, ConnectionDef]
+        Dictionary of signals between nodes of this scene.
     '''
     root: NodeDef
     state: State
@@ -201,6 +252,7 @@ class SceneDef(DefinitionBase):
         self.state = state
         self.definition_name = 'scene'
         self.signals = {}
+        self.external_scenes = {}
 
     def parse_file(self, scene_file: io.TextIOWrapper):
         '''
@@ -234,6 +286,13 @@ class SceneDef(DefinitionBase):
                 resource.from_tscn_data(line)
                 id = parse_for_value(line, 'id')
                 ext_resources[id] = resource
+                # If the resource type is a scene, connects it to the
+                # SceneDef object it is associated with
+                if resource.type_name.type_name == 'PackedScene':
+                    if resource.path not in self.state.scenes:
+                        raise ScenesNotParsed
+                    scene = self.state.scenes[resource.path]
+                    ext_resources[id].scene = scene
             elif line.startswith('['):  # ]
                 current = ''
                 break
@@ -275,14 +334,31 @@ class SceneDef(DefinitionBase):
             return
         nodes: dict[str, NodeDef] = {}
         node: NodeDef = NodeDef(self.state)
-        node.from_tscn_file(scene_file, ext_resources, sub_resources, nodes, line)
-        nodes['.'] = node
+        try:
+            line = node.from_tscn_file(
+                scene_file, ext_resources,
+                sub_resources, nodes, line)
+        except NodeExists as e:
+            node: NodeDef = nodes.pop(e.path)
+            # TODO: Fix this code
+            line = node.from_tscn_file(
+                scene_file, ext_resources,
+                sub_resources, nodes, line)
         self.root = node
         super().__init__('scene', self.root.name)
         # Gets the other nodes
         while True:
             node: NodeDef = NodeDef(self.state)
-            line = node.from_tscn_file(scene_file, ext_resources, sub_resources, nodes)
+            try:
+                line = node.from_tscn_file(
+                    scene_file, ext_resources,
+                    sub_resources, nodes, line)
+            except NodeExists as e:
+                node: NodeDef = nodes.pop(e.path)
+                node = copy.deepcopy(node)
+                line = node.from_tscn_file(
+                    scene_file, ext_resources,
+                    sub_resources, nodes, line)
             if line is not None:
                 break
         while line:
@@ -322,11 +398,15 @@ class ResourceDef(DefinitionBase):
         Any subresources contained within the resource.
     is_external : bool
         Whether or not it is an external resource.
+    scene : Optional[SceneDef]
+        If the external resource is a scene, this attribute stores the
+        SceneDef object associated to it.
     '''
     path: Optional[str] = None
     type_name: TypeName
     sub_resources: list['ResourceDef']
     is_external: bool
+    scene: Optional[SceneDef] = None
 
     def __init__(self):
         self.sub_resources = []
