@@ -9,8 +9,8 @@ from state import State
 from typing import Optional, Union
 
 # Regular expressions
-match_subres = re.compile(r'([^ ]+) = SubResource\("(.+?)"\)')
 match_extres = re.compile(r'([^ ]+) = ExtResource\("(.+?)"\)')
+match_subres = re.compile(r'"?([^ ]+?)"?( =|:) SubResource\("(.+?)"\)')
 
 
 def parse_for_value(line: str, key: str, start=0) -> str:
@@ -109,7 +109,6 @@ class NodeDef(DefinitionBase):
     type_name: TypeName = None
     state: State
     resources: list
-    shared: bool = False
 
     def __init__(self, state: State):
         self.children = []
@@ -117,6 +116,18 @@ class NodeDef(DefinitionBase):
         self.resources = {}
         self.definition_name = 'node'
         self.resources = []
+
+    def copy(self) -> 'NodeDef':
+        '''
+        Returns a copy of the node.
+        '''
+        node: NodeDef = NodeDef(self.state)
+        node.children = self.children.copy()
+        node.type_name = self.type_name
+        node.resources = self.resources.copy()
+        node.script_path = self.script_path
+        node.script = self.script
+        return node
 
     def from_tscn_file(
             self,
@@ -218,7 +229,7 @@ class NodeDef(DefinitionBase):
                 self.resources.append(ext_res_map[id])
             # Checks for internal resources
             elif 'SubResource' in line:
-                id = match_subres.search(line)[2]
+                id = match_subres.search(line)[3]
                 self.resources.append(sub_res_map[id])
         return None
 
@@ -321,11 +332,11 @@ class SceneDef(DefinitionBase):
                     return
             elif current and 'SubResource' in line:
                 match = match_subres.search(line.strip())
-                resource = sub_resources.get(match[2])
+                resource = sub_resources.get(match[3])
                 if resource is not None:
                     sub_resources[current].sub_resources.append(resource)
                 else:
-                    print(f'ERROR: Resource with id {match[2]} does not exist')
+                    print(f'ERROR: Resource with id {match[3]} does not exist')
                     return
             line = scene_file.readline()
         # Gets the root node
@@ -340,7 +351,7 @@ class SceneDef(DefinitionBase):
                 sub_resources, nodes, line)
         except NodeExists as e:
             node: NodeDef = nodes.pop(e.path)
-            # TODO: Fix this code
+            node = node.copy()
             line = node.from_tscn_file(
                 scene_file, ext_resources,
                 sub_resources, nodes, line)
@@ -355,7 +366,7 @@ class SceneDef(DefinitionBase):
                     sub_resources, nodes, line)
             except NodeExists as e:
                 node: NodeDef = nodes.pop(e.path)
-                node = copy.deepcopy(node)
+                node = node.copy()
                 line = node.from_tscn_file(
                     scene_file, ext_resources,
                     sub_resources, nodes, line)

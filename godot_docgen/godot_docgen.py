@@ -24,10 +24,10 @@ def load_files(state: State, path: Path):
     path : pathlib.Path
         Path to the root of the Godot project to document.
     '''
+    path = path.resolve()
     unvisited: list[Path] = [path]
     xml: set[Path] = set()
     tscn: list[Path] = []
-    path = path.resolve()
     # Finds all relevant files
     while unvisited:
         file = unvisited.pop()
