@@ -55,3 +55,6 @@ def load_files(state: State):
         except ScenesNotParsed:
             tscn.insert(0, scene_path)
             continue
+    for scene_path in state.scenes:
+        scene: SceneDef = state.scenes[scene_path]
+        scene.connect_scripts()

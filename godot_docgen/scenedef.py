@@ -131,6 +131,60 @@ class NodeDef(DefinitionBase):
         node.script = self.script
         return node
 
+    def connect_script(self):
+        '''
+        Looks through the State object, and connects the script_path
+        to a ScriptDef object.
+
+        If connecting a script is not possible, this method does nothing.
+        '''
+        if self.script_path is None:
+            return
+        elif self.script is not None:
+            return
+        path = self.script_path[6:]
+        # Checks if the script has been documented
+        script = self.state.scripts.get(path)
+        if script is not None:
+            self.script = script
+        # Otherwise, we have to check the .gd file itself
+        else:
+            path = self.state.settings['path'].joinpath(path)
+            # TODO: Test edge cases with this parsing
+            class_name = None
+            with open(path, 'rt') as file:
+                for line in file:
+                    line = line.strip()
+                    if line.startswith('#'):
+                        continue
+                    elif 'class_name' in line or 'var' in line:
+                        break
+                    elif 'func' in line:
+                        break
+                if 'class_name' not in line:
+                    print(f'Error: Node {self.name} relies on undocumented script {str(path)}')
+                    self.state.num_errors += 1
+                    return
+                matcher = re.compile(r'class_name\s+([^#\s]+)')
+                match = matcher.search(line)
+                if match is None:
+                    line = file.readline().strip()
+                    matcher = re.compile(r'\s*([^#\s]+)')
+                    match = matcher.search(line)
+                if match is not None:
+                    class_name = match[1]
+            if class_name is None:
+                print(f'Error: Could not find a class name in {str(path)}')
+                self.state.num_errors += 1
+                return
+            elif class_name not in self.state.classes:
+                print(f'Error: Node {self.name} relies on undocumented class {class_name}')
+                return
+            # Gets the script using the class name
+            self.script = self.state.classes[class_name]
+            # Updates the node's type
+            self.type_name.type_name = class_name
+
     def from_tscn_file(
             self,
             file: io.TextIOWrapper,
@@ -280,6 +334,34 @@ class SceneDef(DefinitionBase):
         self.definition_name = 'scene'
         self.signals: dict[str, ConnectionDef] = {}
         self.external_scenes = {}
+
+    def connect_scripts(self):
+        '''
+        Runs through the nodes in this scene, and attaches ScriptDef
+        objects to each one with an external script.
+
+        Warnings
+        --------
+        This method requires `parse_file` to have already been ran.
+        It also requires scripts to have already been parsed, with their
+        ScriptDef objects in `State.scripts` and `State.classes`
+        '''
+        # Runs depth-first search over the nodes
+        frontier: list[NodeDef] = [self.root]
+        while frontier:
+            node: NodeDef = frontier.pop()
+            for child in node.children:
+                frontier.append(child)
+            node.connect_script()
+        # Connects signals
+        for name in self.signals:
+            connection = self.signals[name]
+            for emitter in connection.emitters:
+                script: ScriptDef = emitter.script
+                if script is None:
+                    continue
+                elif connection.name in script.signals:
+                    connection.signal = script.signals[connection.name]
 
     def parse_file(self, path: Path):
         '''
