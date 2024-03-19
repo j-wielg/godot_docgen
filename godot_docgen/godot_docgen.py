@@ -13,7 +13,7 @@ def generate_documentation():
     state = State()
 
 
-def load_files(state: State, path: Path):
+def load_files(state: State):
     '''
     Uses depth-first search to search through an entire file tree
     for .tscn and .xml files, generating ScriptDef and SceneDef
@@ -24,7 +24,7 @@ def load_files(state: State, path: Path):
     path : pathlib.Path
         Path to the root of the Godot project to document.
     '''
-    path = path.resolve()
+    path = state.settings['path']
     unvisited: list[Path] = [path]
     xml: set[Path] = set()
     tscn: list[Path] = []
@@ -42,7 +42,6 @@ def load_files(state: State, path: Path):
         if file.is_dir():
             for subfile in file.iterdir():
                 unvisited.append(subfile)
-
     # Generates all script files and adds them to the state
     for script_path in xml:
         script = ScriptDef(state)
@@ -52,10 +51,7 @@ def load_files(state: State, path: Path):
         scene_path = tscn.pop()
         scene = SceneDef(state)
         try:
-            with open(scene_path, 'rt') as scene_file:
-                scene.parse_file(scene_file)
+            scene.parse_file(scene_path)
         except ScenesNotParsed:
             tscn.insert(0, scene_path)
             continue
-        scene_path = str(scene_path.relative_to(path))
-        state.scenes['res://' + scene_path] = scene

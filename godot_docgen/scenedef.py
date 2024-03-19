@@ -7,6 +7,7 @@ from definitions import DefinitionBase, SignalDef, TypeName, MethodDef
 from scriptdef import ScriptDef
 from state import State
 from typing import Optional, Union
+from pathlib import Path
 
 # Regular expressions
 match_extres = re.compile(r'([^ ]+) = ExtResource\("(.+?)"\)')
@@ -85,6 +86,7 @@ class ConnectionDef(DefinitionBase):
     def __init__(self):
         self.emitters = []
         self.receivers = []
+        self.signal = None
 
 
 class NodeDef(DefinitionBase):
@@ -150,8 +152,20 @@ class NodeDef(DefinitionBase):
             Maps a resource id to an internal resource.
         node_map : dict[str, NodeDef]
             Maps the name of a node to its NodeDef object
-        line: str, default = None
+        line : str, default = None
             The first line of the node definition.
+
+        Raises
+        ------
+        NodeExists(path)
+            Raised if the node being created is already in the scene tree.
+            This occurs when the node is an override of another scene's node.
+
+        Warnings
+        --------
+        The node's type cannot be completely inferred from the .tscn data. To
+        get accurate type information, you must run `attach_script` once all
+        the scripts have been parsed.
         '''
         if line is None:
             line = file.readline()
@@ -177,6 +191,8 @@ class NodeDef(DefinitionBase):
         if parent is not None:
             node_map[parent].children.append(self)
         # Gets the node's type
+        # Note that if the node has a script attached, this might not
+        # necessarily be the correct type.
         type_name: str = node_info.get('type')
         if type_name is not None:
             self.type_name = TypeName(type_name)
@@ -262,21 +278,36 @@ class SceneDef(DefinitionBase):
     def __init__(self, state: State):
         self.state = state
         self.definition_name = 'scene'
-        self.signals = {}
+        self.signals: dict[str, ConnectionDef] = {}
         self.external_scenes = {}
 
-    def parse_file(self, scene_file: io.TextIOWrapper):
+    def parse_file(self, path: Path):
         '''
         Fills out the scene's attributes by parsing a .tscn file.
 
         Parameters
         ----------
-        scene_file : io.TextIOWrapper
-            The .tscn file containing the scene data.
+        path : pathlib.Path
+            Path to the .tscn file to parse.
 
         Warnings
         --------
-        This function will modify the state object.
+        This method will modify the state object by adding the scene object
+        to `State.scenes`.
+
+        Scene files (.tscn) do not contain all the information required
+        to document a scene. Once the scripts have been documented, it
+        is necessary to call `SceneDef.attach_scripts` to finish parsing.
+        '''
+        with open(path, 'rt') as file:
+            self._parse_file(file)
+        project_path = self.state.settings['path']
+        scene_path = str(path.relative_to(project_path))
+        self.state.scenes['res://' + scene_path] = self
+
+    def _parse_file(self, scene_file: io.TextIOWrapper):
+        '''
+        Internal function used in the `parse_file` method.
         '''
         # Stores all of the external resources
         ext_resources: dict[str, ResourceDef] = {}
