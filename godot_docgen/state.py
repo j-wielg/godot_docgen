@@ -22,13 +22,43 @@ class State:
         own classes.
     scenes : OrderedDict[str, SceneDef]
         Stores scene trees.
+    settings : dict
+        Stores the program's general settings.
     '''
+    settings: dict
+
     def __init__(self) -> None:
         self.num_errors = 0
         self.num_warnings = 0
         self.classes: OrderedDict = OrderedDict()
         self.scripts: OrderedDict = OrderedDict()
         self.scenes: OrderedDict = OrderedDict()
+
+    def config(self, settings: dict):
+        '''
+        Configures the State object with various settings.
+
+        Parameters
+        ----------
+        settings : dict
+            A dictionary containing the settings to configure. A full
+            description of the available key-value pairs is found below.
+
+        Notes
+        -----
+        This section contains a list of the accepted key-value pairs.
+        path : pathlib.Path, default = Path('../project').resolve()
+            Path to the Godot project to generate documentation for.
+        output_path : pathlib.Path, default = Path('../rst_files').resolve()
+            Path to a directory where the .rst files will be dumped.
+        '''
+        self.settings = settings
+        if 'path' not in settings:
+            self.settings['path'] = '../project'
+        if 'output_path' not in settings:
+            self.settings['output_path'] = '../rst_files'
+        self.settings['path'] = Path(self.settings['path']).resolve()
+        self.settings['output_path'] = Path(self.settings['output_path']).resolve()
 
     def sort_classes(self) -> None:
         '''
