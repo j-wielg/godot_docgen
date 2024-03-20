@@ -179,13 +179,6 @@ class SignalDef(DefinitionBase):
         The list of parameters taken when emitting the signal
     description : Optional[str]
         The description of the signal
-    instantiated : bool, default=False
-        Whether or not this object is documenting an instantiated signal
-    emitters : list[NodeDef]
-        A list of nodes which emit the signal
-    receivers : list[tuple[NodeDef, MethodDef]]
-        A list of nodes which receive the signal, and the method that they use
-        for the signal handler.
     deprecated : Optional[str]
     experimental : Optional[str]
     '''
@@ -211,14 +204,6 @@ class SignalDef(DefinitionBase):
         self.receivers = []
         self.deprecated = signal.get('deprecated')
         self.experimental = signal.get('experimental')
-
-    def add_connection(self, emitter, receiver, handler):
-        '''
-        pass
-        '''
-        self.instantiated = True
-        self.emitters.append(emitter)
-        self.receivers.append((receiver, handler))
 
 
 class AnnotationDef(DefinitionBase):
