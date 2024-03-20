@@ -152,6 +152,10 @@ class NodeDef(DefinitionBase):
             path = self.state.settings['path'].joinpath(path)
             # TODO: Test edge cases with this parsing
             class_name = None
+            if not path.exists():
+                print(f'Error: Node {self.name} relies on nonexistent script {path}')
+                self.state.num_errors += 1
+                return
             with open(path, 'rt') as file:
                 for line in file:
                     line = line.strip()
