@@ -10,6 +10,7 @@ import xml.etree.ElementTree as ET
 from typing import Optional, OrderedDict
 from state import State
 import utils
+import rst_generation
 
 
 class TagState:
@@ -46,15 +47,13 @@ class TypeName:
         self.enum = enum
         self.is_bitfield = is_bitfield
 
-    def to_rst(self) -> str:
+    def to_rst(self, s: State) -> str:
         if self.enum is not None:
-            # return make_enum(self.enum, self.is_bitfield, state)
-            return ''
+            return rst_generation.make_enum(self.enum, self.is_bitfield, s)
         elif self.type_name == "void":
             return "|void|"
         else:
-            # return make_type(self.type_name, state)
-            return ''
+            return rst_generation.make_type(self.type_name, s)
 
     @classmethod
     def from_element(cls, element: ET.Element) -> "TypeName":
@@ -277,6 +276,65 @@ class MethodDef(DefinitionBase):
         # Other things
         self.deprecated = method.get("deprecated")
         self.experimental = method.get("experimental")
+
+    def to_rst(self, class_def: DefinitionBase, ref_type: str, s: State) -> tuple(str, str):
+        '''
+        Takes the method description, and generates ReStructured Text
+        to document it.
+
+        Parameters
+        ----------
+        class_def : DefinitionBase
+            The definition object which contains this method.
+        ref_type : str
+            The type of object being documented (method or constructor)
+        s : State
+            The state of the program
+
+        Returns
+        -------
+        tuple[str, str]
+            A tuple containing the documented return type and method signature,
+            in that order.
+        '''
+        # ml.append(rst_generation.make_method_signature(self, m, "constructor", self.state))
+        ret_type = self.return_type.to_rst(s)
+
+        out = ""
+        if ref_type != "":
+            if ref_type == "method":
+                ref_type_qualifier = ""
+                if self.name.startswith("_"):
+                    ref_type_qualifier = "private_"
+                out += f":ref:`{self.name}<class_{class_def.name}_{ref_type_qualifier}{ref_type}_{self.name}>`"
+            else:
+                out += f":ref:`{self.name}<class_{class_def.name}_{ref_type}_{self.name}>`"
+        else:
+            out += f"**{self.name}**"
+
+        out += "\\ ("
+        for i, arg in enumerate(self.parameters):
+            if i > 0:
+                out += ", "
+            else:
+                out += "\\ "
+            out += f"{arg.name}\\: {arg.type_name.to_rst(s)}"
+            if arg.default_value is not None:
+                out += f" = {arg.default_value}"
+        if self.qualifiers is not None and "vararg" in self.qualifiers:
+            if len(self.parameters) > 0:
+                out += ", ..."
+            else:
+                out += "\\ ..."
+
+        out += "\\ )"
+        if self.qualifiers is not None:
+            # Use substitutions for abbreviations.
+            # This is used to display tooltips on hover.
+            # See `make_footer()` for descriptions.
+            for qualifier in self.qualifiers.split():
+                out += f" |{qualifier}|"
+        return ret_type, out
 
 
 class ConstantDef(DefinitionBase):

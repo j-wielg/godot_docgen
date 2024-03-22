@@ -3,9 +3,11 @@ Contains helper functions which generate rst components.
 '''
 import utils
 from godot_classes import GODOT_NATIVE_CLASSES
+import re
 
 MARKUP_ALLOWED_PRECEDENT = " -:/'\"<([{"
 MARKUP_ALLOWED_SUBSEQUENT = " -.,:;!?\\/'\")]}>"
+GODOT_DOCS_PATTERN = re.compile(r"^\$DOCS_URL/(.*)\.html(#.*)?$")
 
 RESERVED_FORMATTING_TAGS = ["i", "b", "u", "code", "kbd", "center", "url", "br"]
 RESERVED_LAYOUT_TAGS = ["codeblocks"]
@@ -813,3 +815,66 @@ def make_enum(t: str, is_bitfield: bool, state) -> str:
         utils.print_error(f'{state.current_class}.xml: Unresolved enum "{t}".', state)
 
     return t
+
+
+def make_deprecated_experimental(item, state) -> str:
+    '''
+    Takes an item, and generates rst text which documents the experimental
+    and deprecated messages.
+
+    Parameters
+    ----------
+    item : DefinitionBase
+        The item to generate deprecated and experimental messages for.
+    state : State
+        The state of the program
+
+    Returns
+    -------
+    str
+        A string containing ReStructured Text.
+    '''
+    result = ""
+
+    if item.deprecated is not None:
+        deprecated_prefix = utils.translate("Deprecated:")
+        if item.deprecated.strip() == "":
+            default_message = utils.translate(f"This {item.definition_name} may be changed or removed in future versions.")
+            result += f"**{deprecated_prefix}** {default_message}\n\n"
+        else:
+            result += f"**{deprecated_prefix}** {format_text_block(item.deprecated.strip(), item, state)}\n\n"
+
+    if item.experimental is not None:
+        experimental_prefix = utils.translate("Experimental:")
+        if item.experimental.strip() == "":
+            default_message = utils.translate(f"This {item.definition_name} may be changed or removed in future versions.")
+            result += f"**{experimental_prefix}** {default_message}\n\n"
+        else:
+            result += f"**{experimental_prefix}** {format_text_block(item.experimental.strip(), item, state)}\n\n"
+
+    return result
+
+
+def make_link(url: str, title: str) -> str:
+    match = GODOT_DOCS_PATTERN.search(url)
+    if match:
+        groups = match.groups()
+        if match.lastindex == 2:
+            # Doc reference with fragment identifier: emit direct link to section with reference to page, for example:
+            # `#calling-javascript-from-script in Exporting For Web`
+            # Or use the title if provided.
+            if title != "":
+                return f"`{title} <../{groups[0]}.html{groups[1]}>`__"
+            return f"`{groups[1]} <../{groups[0]}.html{groups[1]}>`__ in :doc:`../{groups[0]}`"
+        elif match.lastindex == 1:
+            # Doc reference, for example:
+            # `Math`
+            if title != "":
+                return f":doc:`{title} <../{groups[0]}>`"
+            return f":doc:`../{groups[0]}`"
+
+    # External link, for example:
+    # `http://enet.bespin.org/usergroup0.html`
+    if title != "":
+        return f"`{title} <{url}>`__"
+    return f"`{url} <{url}>`__"
