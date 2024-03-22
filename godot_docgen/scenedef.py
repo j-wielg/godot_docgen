@@ -8,6 +8,7 @@ from scriptdef import ScriptDef
 from state import State
 from typing import Optional, Union
 from pathlib import Path
+import utils
 
 # Regular expressions
 match_extres = re.compile(r'([^ ]+) = ExtResource\("(.+?)"\)')
@@ -294,7 +295,9 @@ class NodeDef(DefinitionBase):
                 try:
                     id = match_extres.search(line)[2]
                 except TypeError:
-                    print('ERROR: The program does not match internal scripts')
+                    utils.print_error(
+                        f'Node {self.name} in scene {self.state.current_class.name} contains an internal script which will not be parsed',
+                        self.state)
                     continue
                 self.script_path = ext_res_map[id].path
             # Checks for external resources
@@ -385,6 +388,9 @@ class SceneDef(DefinitionBase):
         to document a scene. Once the scripts have been documented, it
         is necessary to call `SceneDef.attach_scripts` to finish parsing.
         '''
+        # Sets the current scene
+        self.state.current_class = self
+        self.name = path.name
         with open(path, 'rt') as file:
             self._parse_file(file)
         project_path = self.state.settings['path']

@@ -29,10 +29,12 @@ class State:
 
     def __init__(self) -> None:
         self.num_errors = 0
+        self.should_color = True
         self.num_warnings = 0
         self.classes: OrderedDict = OrderedDict()
         self.scripts: OrderedDict = OrderedDict()
         self.scenes: OrderedDict = OrderedDict()
+        self.current_class = None
 
     def config(self, settings: dict):
         '''
