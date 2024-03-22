@@ -1,4 +1,4 @@
-from definitions import DefinitionBase, MethodDef, ConstantDef, PropertyDef, ParameterDef, EnumDef, MethodDef, SignalDef, AnnotationDef, ThemeItemDef, TypeName
+from definitions import DefinitionBase, MethodDef, ConstantDef, PropertyDef, ParameterDef, EnumDef, SignalDef, AnnotationDef, ThemeItemDef, TypeName
 from typing import OrderedDict, Optional
 from state import State
 import enum
@@ -176,7 +176,8 @@ class ScriptDef(DefinitionBase):
         if methods is not None:
             for method in methods:
                 assert method.tag == "method"
-                method_def = MethodDef(method, "method")
+                method_def = MethodDef('temp')
+                method_def.from_xml(method, 'method')
                 # Checks for constructors
                 if method_def.name == '_init':
                     method_def.definition_name = "constructor"
@@ -193,7 +194,8 @@ class ScriptDef(DefinitionBase):
         if operators is not None:
             for operator in operators:
                 assert operator.tag == "operator"
-                op_def = MethodDef(operator, "operator")
+                op_def = MethodDef('temp')
+                op_def.from_xml(operator, 'operator')
                 if op_def.name not in self.operators:
                     self.operators[op_def.name] = []
                 self.operators[op_def.name].append(op_def)
@@ -338,7 +340,7 @@ class ScriptDef(DefinitionBase):
         # Constructors table
         if len(self.constructors) > 0:
             f.write(".. rst-class:: classref-reftable-group\n\n")
-            f.write(rst_generation.make_heading("Constructors", "-"))
+            f.write(utils.make_heading("Constructors", "-"))
 
             ml = []
             for method_list in self.constructors.values():
@@ -395,7 +397,7 @@ class ScriptDef(DefinitionBase):
         if len(self.enums) > 0:
             f.write(rst_generation.make_separator(True))
             f.write(".. rst-class:: classref-descriptions-group\n\n")
-            f.write(rst_generation.make_heading("Enumerations", "-"))
+            f.write(utils.make_heading("Enumerations", "-"))
 
             index = 0
 
@@ -532,7 +534,7 @@ class ScriptDef(DefinitionBase):
                     ret_type, signature = m.make_signature(self, '', self.state)
                     f.write(f"{ret_type} {signature}\n\n")
                     # Add constructor description, or a call to action if it's missing.
-                    f.write(rst_generation.make_deprecated_experimental(m, state))
+                    f.write(rst_generation.make_deprecated_experimental(m, self.state))
                     if m.description is not None and m.description.strip() != "":
                         f.write(f"{rst_generation.format_text_block(m.description.strip(), m, self.state)}\n\n")
                     elif m.deprecated is None and m.experimental is None:
@@ -564,7 +566,7 @@ class ScriptDef(DefinitionBase):
                     ret_type, signature = m.make_signature(self, '', self.state)
                     f.write(f"{ret_type} {signature}\n\n")
                     # Add method description, or a call to action if it's missing.
-                    f.write(rst_generation.make_deprecated_experimental(m, state))
+                    f.write(rst_generation.make_deprecated_experimental(m, self.state))
                     if m.description is not None and m.description.strip() != "":
                         f.write(f"{rst_generation.format_text_block(m.description.strip(), m, self.state)}\n\n")
                     elif m.deprecated is None and m.experimental is None:
