@@ -165,7 +165,8 @@ class PropertyDef(DefinitionBase):
             paramdef.type_name = self.type_name
             paramdef.name = 'value'
             paramdef.default_value = None
-            setter = MethodDef(self.setter, TypeName("void"), setter_params, None, None)
+            setter = MethodDef(self.setter)
+            setter.from_vars(self.setter, TypeName("void"), setter_params, None, None)
 
         ret_type, signature = setter.make_signature(class_def, '', s)
         return f"{ret_type} {signature}"
@@ -195,7 +196,8 @@ class PropertyDef(DefinitionBase):
         # Otherwise we fake it with the information we have available.
         else:
             getter_params: list[ParameterDef] = []
-            getter = MethodDef(self.getter, self.type_name, getter_params, None, None)
+            getter = MethodDef(self.getter)
+            getter.from_vars(self.getter, self.type_name, getter_params, None, None)
         ret_type, signature = getter.make_signature(class_def, '', s)
         return f"{ret_type} {signature}"
 
@@ -345,7 +347,10 @@ class MethodDef(DefinitionBase):
     description: Optional[str]
     qualifiers: Optional[str]
 
-    def __init__(self, method: ET.Element, definition_name: str) -> None:
+    def __init__(self, name: str):
+        super().__init__("method", name)
+
+    def from_xml(self, method: ET.Element, definition_name: str) -> None:
         # Gets the name of the method
         name = method.attrib["name"]
         super().__init__(definition_name, name)
@@ -373,14 +378,7 @@ class MethodDef(DefinitionBase):
         self.deprecated = method.get("deprecated")
         self.experimental = method.get("experimental")
 
-    def __init__(
-        self,
-        name: str,
-        return_type: TypeName,
-        parameters: List[ParameterDef],
-        description: Optional[str],
-        qualifiers: Optional[str],
-    ) -> None:
+    def from_vars(self, name: str, return_type: TypeName, parameters: list[ParameterDef], description: Optional[str], qualifiers: Optional[str]) -> None:
         super().__init__("method", name)
         self.return_type = return_type
         self.parameters = parameters
