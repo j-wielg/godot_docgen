@@ -135,6 +135,70 @@ class PropertyDef(DefinitionBase):
         self.deprecated = property.get("deprecated")
         self.experimental = property.get("experimental")
 
+    def make_setter_signature(self, class_def, s: State) -> str:
+        '''
+        Creates a method signature for the parameter's setter.
+
+        Parameters
+        ----------
+        class : ScriptDef
+            The class that contains the property
+        s : State
+            The state of the program
+
+        Returns
+        -------
+        str
+            A string containing the method signature for the parameter's
+            setter.
+        '''
+        # Returns if it has no setter
+        if self.setter is None:
+            return ''
+        # If setter is a method available as a method definition, we use that.
+        if self.setter in class_def.methods:
+            setter = class_def.methods[self.setter][0]
+        # Otherwise we fake it with the information we have available.
+        else:
+            setter_params: list[ParameterDef] = []
+            paramdef: ParameterDef = ParameterDef()
+            paramdef.type_name = self.type_name
+            paramdef.name = 'value'
+            paramdef.default_value = None
+            setter = MethodDef(self.setter, TypeName("void"), setter_params, None, None)
+
+        ret_type, signature = setter.make_signature(class_def, '', s)
+        return f"{ret_type} {signature}"
+
+    def make_getter_signature(self, class_def, s: State) -> str:
+        '''
+        Creates a method signature for the parameter's getter.
+
+        Parameters
+        ----------
+        class : ScriptDef
+            The class that contains the property
+        s : State
+            The state of the program
+
+        Returns
+        -------
+        str
+            A string containing the method signature for the parameter's
+            getter.
+        '''
+        if self.getter is None:
+            return ""
+        # If getter is a method available as a method definition, we use that.
+        if self.getter in class_def.methods:
+            getter = class_def.methods[self.getter][0]
+        # Otherwise we fake it with the information we have available.
+        else:
+            getter_params: list[ParameterDef] = []
+            getter = MethodDef(self.getter, self.type_name, getter_params, None, None)
+        ret_type, signature = getter.make_signature(class_def, '', s)
+        return f"{ret_type} {signature}"
+
 
 class ParameterDef(DefinitionBase):
     '''
@@ -154,7 +218,10 @@ class ParameterDef(DefinitionBase):
     type_name: TypeName
     default_value: Optional[str]
 
-    def __init__(self, param: ET.Element) -> None:
+    def __init__(self, param: ET.Element = None) -> None:
+        if param is None:
+            super().__init__("parameter", '')
+            return
         name = param.attrib["name"]
         super().__init__("parameter", name)
         # TODO: Add an error message here
@@ -305,6 +372,20 @@ class MethodDef(DefinitionBase):
         # Other things
         self.deprecated = method.get("deprecated")
         self.experimental = method.get("experimental")
+
+    def __init__(
+        self,
+        name: str,
+        return_type: TypeName,
+        parameters: List[ParameterDef],
+        description: Optional[str],
+        qualifiers: Optional[str],
+    ) -> None:
+        super().__init__("method", name)
+        self.return_type = return_type
+        self.parameters = parameters
+        self.description = description
+        self.qualifiers = qualifiers
 
     def make_signature(self, class_def: DefinitionBase, ref_type: str, s: State) -> tuple[str, str]:
         '''
