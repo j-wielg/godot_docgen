@@ -888,3 +888,31 @@ def make_separator(section_level: bool = False) -> str:
     if section_level:
         separator_class = "section"
     return f".. rst-class:: classref-{separator_class}-separator\n\n----\n\n"
+
+
+def make_footer() -> str:
+    '''
+    Generate reusable abbreviation substitutions.
+    This way, we avoid bloating the generated rST with duplicate abbreviations.
+    '''
+    virtual_msg = utils.translate("This method should typically be overridden by the user to have any effect.")
+    const_msg = utils.translate("This method has no side effects. It doesn't modify any of the instance's member variables.")
+    vararg_msg = utils.translate("This method accepts any number of arguments after the ones described here.")
+    constructor_msg = utils.translate("This method is used to construct a type.")
+    static_msg = utils.translate(
+        "This method doesn't need an instance to be called, so it can be called directly using the class name."
+    )
+    operator_msg = utils.translate("This method describes a valid operator to use with this type as left-hand operand.")
+    bitfield_msg = utils.translate("This value is an integer composed as a bitmask of the following flags.")
+    void_msg = utils.translate("No return value.")
+
+    return (
+        f".. |virtual| replace:: :abbr:`virtual ({virtual_msg})`\n"
+        f".. |const| replace:: :abbr:`const ({const_msg})`\n"
+        f".. |vararg| replace:: :abbr:`vararg ({vararg_msg})`\n"
+        f".. |constructor| replace:: :abbr:`constructor ({constructor_msg})`\n"
+        f".. |static| replace:: :abbr:`static ({static_msg})`\n"
+        f".. |operator| replace:: :abbr:`operator ({operator_msg})`\n"
+        f".. |bitfield| replace:: :abbr:`BitField ({bitfield_msg})`\n"
+        f".. |void| replace:: :abbr:`void ({void_msg})`\n"
+    )
