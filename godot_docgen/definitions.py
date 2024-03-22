@@ -204,6 +204,35 @@ class SignalDef(DefinitionBase):
         self.deprecated = signal.get('deprecated')
         self.experimental = signal.get('experimental')
 
+    def make_signature(self, class_def: DefinitionBase, s: State) -> tuple[str, str]:
+        '''
+        Documents the signal using ReStructured Text.
+
+        Parameters
+        ----------
+        class_def : DefinitionBase
+            The class which contains the signal
+        s : State
+            The state of the program
+
+        Returns
+        -------
+        str
+            A string documenting the signal.
+        '''
+        out = "\\ ("
+        # Documents the parameters
+        for i, arg in enumerate(self.parameters):
+            if i > 0:
+                out += ", "
+            else:
+                out += "\\ "
+            out += f"{arg.name}\\: {arg.type_name.to_rst(s)}"
+            if arg.default_value is not None:
+                out += f" = {arg.default_value}"
+        out += "\\ )"
+        return out
+
 
 class AnnotationDef(DefinitionBase):
     '''
@@ -277,7 +306,7 @@ class MethodDef(DefinitionBase):
         self.deprecated = method.get("deprecated")
         self.experimental = method.get("experimental")
 
-    def to_rst(self, class_def: DefinitionBase, ref_type: str, s: State) -> tuple[str, str]:
+    def make_signature(self, class_def: DefinitionBase, ref_type: str, s: State) -> tuple[str, str]:
         '''
         Takes the method description, and generates ReStructured Text
         to document it.
