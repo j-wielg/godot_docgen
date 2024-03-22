@@ -277,7 +277,7 @@ class MethodDef(DefinitionBase):
         self.deprecated = method.get("deprecated")
         self.experimental = method.get("experimental")
 
-    def to_rst(self, class_def: DefinitionBase, ref_type: str, s: State) -> tuple(str, str):
+    def to_rst(self, class_def: DefinitionBase, ref_type: str, s: State) -> tuple[str, str]:
         '''
         Takes the method description, and generates ReStructured Text
         to document it.
