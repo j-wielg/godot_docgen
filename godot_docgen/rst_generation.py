@@ -878,3 +878,13 @@ def make_link(url: str, title: str) -> str:
     if title != "":
         return f"`{title} <{url}>`__"
     return f"`{url} <{url}>`__"
+
+
+def make_separator(section_level: bool = False) -> str:
+    '''
+    Makes a separator for a rst file.
+    '''
+    separator_class = "item"
+    if section_level:
+        separator_class = "section"
+    return f".. rst-class:: classref-{separator_class}-separator\n\n----\n\n"
