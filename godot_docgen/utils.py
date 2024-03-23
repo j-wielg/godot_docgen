@@ -52,6 +52,20 @@ def print_warning(warning: str, state) -> None:
     state.num_warnings += 1
 
 
+def print_log(message: str, state) -> None:
+    '''
+    Prints a log message.
+
+    Parameters
+    ----------
+    message : str
+        The message to display
+    state : State
+        The state of the program
+    '''
+    print(message)
+
+
 def make_heading(title: str, underline: str, l10n: bool = True) -> str:
     if l10n:
         new_title = translate(title)
