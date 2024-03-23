@@ -432,7 +432,7 @@ class ScriptDef(DefinitionBase):
                         f.write(".. container:: contribute\n\n\t")
                         f.write(
                             utils.translate(
-                                "There is currently no description for this enum. Please help us by :ref:`contributing one <doc_updating_the_class_reference>`!"
+                                "There is currently no description for this enum."
                             ) + "\n\n"
                         )
 
