@@ -772,7 +772,8 @@ def make_type(klass: str, state) -> str:
     if link_type in state.classes:
         type_rst = f":ref:`{link_type}<class_{link_type}>`"
         if is_array:
-            type_rst = f":ref:`Array<class_Array>`\\[{type_rst}\\]"
+            # type_rst = f":ref:`Array<class_Array>`\\[{type_rst}\\]"
+            type_rst = f"`Array <https://docs.godotengine.org/en/stable/classes/class_array.html>`_\\[{type_rst}\\]"
         return type_rst
     elif link_type in GODOT_NATIVE_CLASSES:
         type_rst = f"`{link_type} <https://docs.godotengine.org/en/stable/classes/class_{link_type.lower()}.html>`_"
@@ -783,7 +784,7 @@ def make_type(klass: str, state) -> str:
     utils.print_error(f'{state.current_class}.xml: Unresolved type "{link_type}".', state)
     type_rst = f"``{link_type}``"
     if is_array:
-        type_rst = f":ref:`Array<class_Array>`\\[{type_rst}\\]"
+        type_rst = f"`Array <https://docs.godotengine.org/en/stable/classes/class_array.html>`_\\[{type_rst}\\]"
     return type_rst
 
 
