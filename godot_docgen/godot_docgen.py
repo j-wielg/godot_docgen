@@ -28,7 +28,7 @@ def load_files(state: State):
     path : pathlib.Path
         Path to the root of the Godot project to document.
     '''
-    path = state.settings['path']
+    path = state.path
     unvisited: list[Path] = [path]
     xml: set[Path] = set()
     tscn: list[Path] = []
@@ -88,3 +88,17 @@ def load_files(state: State):
     for scene_path in state.scenes:
         scene: SceneDef = state.scenes[scene_path]
         scene.connect_scripts()
+
+
+def document_classes(state: State):
+    '''
+    Generates RST documentation for all of the classes.
+
+    Creates a .rst file for each class
+
+    Paramters
+    ---------
+    state : State
+        The state of the program
+    '''
+    pass

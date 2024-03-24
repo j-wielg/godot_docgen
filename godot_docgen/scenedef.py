@@ -150,7 +150,7 @@ class NodeDef(DefinitionBase):
             self.script = script
         # Otherwise, we have to check the .gd file itself
         else:
-            path = self.state.settings['path'].joinpath(path)
+            path = self.state.path.joinpath(path)
             # TODO: Test edge cases with this parsing
             class_name = None
             if not path.exists():
@@ -393,7 +393,7 @@ class SceneDef(DefinitionBase):
         self.name = path.name
         with open(path, 'rt') as file:
             self._parse_file(file)
-        project_path = self.state.settings['path']
+        project_path = self.state.path
         scene_path = str(path.relative_to(project_path))
         self.state.scenes['res://' + scene_path] = self
 
