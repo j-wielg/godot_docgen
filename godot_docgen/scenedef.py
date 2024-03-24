@@ -90,6 +90,14 @@ class ConnectionDef(DefinitionBase):
         self.signal = None
 
 
+class NodeSkipped(Exception):
+    '''
+    Raised when a node matched a regular expression and is
+    not parsed.
+    '''
+    pass
+
+
 class NodeDef(DefinitionBase):
     '''
     Used to document a node within a Godot scene.
@@ -112,6 +120,7 @@ class NodeDef(DefinitionBase):
     type_name: TypeName = None
     state: State
     resources: list
+    skipped: bool = False
 
     def __init__(self, state: State):
         self.children = []
@@ -139,7 +148,9 @@ class NodeDef(DefinitionBase):
 
         If connecting a script is not possible, this method does nothing.
         '''
-        if self.script_path is None:
+        if self.skipped:
+            return
+        elif self.script_path is None:
             return
         elif self.script is not None:
             return
@@ -218,7 +229,8 @@ class NodeDef(DefinitionBase):
             ext_res_map: dict[str, 'ResourceDef'],
             sub_res_map: dict[str, 'ResourceDef'],
             node_map: dict[str, 'NodeDef'],
-            line: str = None):
+            line: str = None,
+            skip: list[re.Pattern] = []):
         '''
         Generates a node's documentation from a tscn file.
 
@@ -235,6 +247,8 @@ class NodeDef(DefinitionBase):
             Maps the name of a node to its NodeDef object
         line : str, default = None
             The first line of the node definition.
+        skip : list[re.Pattern], default=[]
+            Nodes which match a pattern in the skip list will not be parsed.
 
         Raises
         ------
@@ -277,8 +291,30 @@ class NodeDef(DefinitionBase):
             self.state.indent_level -= 1
             raise NodeExists(path)
         node_map[path] = self
+        # Finds the node's parent
         if parent is not None:
-            node_map[parent].children.append(self)
+            parent_node = node_map[parent]
+            if parent_node.skipped:
+                self.skipped = True
+                utils.print_debug(
+                    f"Parent '{parent}' has been skipped. Skipping node",
+                    self.state)
+                while line := file.readline().strip():
+                    pass
+                return line
+            parent_node.children.append(self)
+        # Checks if the node should be skipped
+        # This can only be done AFTER checking for instance override
+        for pattern in skip:
+            if pattern.fullmatch(self.name) is not None:
+                utils.print_debug(
+                    f'Skipping node {self.name}',
+                    self.state)
+                self.state.indent_level -= 1
+                self.skipped = True
+                while line := file.readline().strip():
+                    pass
+                return line
         # Gets the node's type
         # Note that if the node has a script attached, this might not
         # necessarily be the correct type.
@@ -438,12 +474,22 @@ class SceneDef(DefinitionBase):
             f"Parsing file '{str(scene_path)}'",
             self.state)
         self.state.indent_level += 1
+        # Checks whether the scene should be skipped
+        nodes = self.state.do_not_parse.get(scene_path)
+        if nodes == []:
+            utils.print_debug(
+                f"Skipping file '{str(scene_path)}'",
+                self.state)
+            self.state.indent_level -= 2
+            return
+        if not isinstance(nodes, list):
+            nodes = []
         with open(path, 'rt') as file:
-            self._parse_file(file)
+            self._parse_file(file, nodes)
         self.state.scenes['res://' + scene_path] = self
         self.state.indent_level -= 2
 
-    def _parse_file(self, scene_file: io.TextIOWrapper):
+    def _parse_file(self, scene_file: io.TextIOWrapper, skip: list[re.Pattern]):
         '''
         Internal function used in the `parse_file` method.
         '''
@@ -522,13 +568,13 @@ class SceneDef(DefinitionBase):
         try:
             line = node.from_tscn_file(
                 scene_file, ext_resources,
-                sub_resources, nodes, line)
+                sub_resources, nodes, line, skip)
         except NodeExists as e:
             node: NodeDef = nodes.pop(e.path)
             node = node.copy()
             line = node.from_tscn_file(
                 scene_file, ext_resources,
-                sub_resources, nodes, line)
+                sub_resources, nodes, line, skip)
         self.root = node
         # Gets the other nodes
         while True:
@@ -536,13 +582,13 @@ class SceneDef(DefinitionBase):
             try:
                 line = node.from_tscn_file(
                     scene_file, ext_resources,
-                    sub_resources, nodes, line)
+                    sub_resources, nodes, line, skip)
             except NodeExists as e:
                 node: NodeDef = nodes.pop(e.path)
                 node = node.copy()
                 line = node.from_tscn_file(
                     scene_file, ext_resources,
-                    sub_resources, nodes, line)
+                    sub_resources, nodes, line, skip)
             if line is not None:
                 break
         while line:
