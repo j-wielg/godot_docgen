@@ -2,6 +2,7 @@ from definitions import DefinitionBase, MethodDef, ConstantDef, PropertyDef, Par
 from typing import OrderedDict, Optional
 from state import State
 import enum
+from pathlib import Path
 import xml.etree.ElementTree as ET
 import re
 import io
@@ -127,6 +128,22 @@ class ScriptDef(DefinitionBase):
         --------
         This method modifies state by adding a key-value pair to State.classes
         '''
+        self.state.indent_level += 1
+        relative_path = Path(filepath).relative_to(self.state.path)
+        utils.print_debug(
+            f"Parsing file '{str(relative_path)}'",
+            self.state
+        )
+        self.state.indent_level += 1
+        # Checks if the file is in do_not_parse
+        # If so, it is skipped
+        if str(relative_path) in self.state.do_not_parse:
+            utils.print_debug(
+                f"Skipping xml file '{str(relative_path)}'",
+                self.state
+            )
+            self.state.indent_level -= 2
+            return
         # Reads and parses the xml file
         with open(filepath, 'r') as file:
             tree = ET.parse(file)
@@ -168,7 +185,7 @@ class ScriptDef(DefinitionBase):
                 assert property.tag == "member"
                 property_def = PropertyDef(property)
                 if property_def.name in self.properties:
-                    print_error(f'{filepath}: Duplicate property "{property_def.name}".', self)
+                    utils.print_error(f'{filepath}: Duplicate property "{property_def.name}".', self)
                     continue
                 self.properties[property_def.name] = property_def
         # Finds the class methods
@@ -238,6 +255,7 @@ class ScriptDef(DefinitionBase):
                 assert link.tag == 'link'
                 if link.text is not None:
                     self.tutorials.append((link.text.strip(), link.get("title", "")))
+        self.state.indent_level -= 2
 
     def make_class_rst(self, f: io.TextIOWrapper):
         '''
