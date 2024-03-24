@@ -45,6 +45,9 @@ class State:
         Where the program should print info messages.
     debug : io.TextIOWrapper
         Where the program should print debug messages.
+    indent_level : int, default=0
+        How much to indent when printing messages to a log file.
+        This is only used if self.debug is not None.
     '''
     settings: dict
 
@@ -65,6 +68,7 @@ class State:
         self.warning: io.TextIOWrapper = sys.stderr
         self.info: io.TextIOWrapper = sys.stdout
         self.debug: io.TextIOWrapper = None
+        self.indent_level: int = 0
 
     def config(self, settings: dict):
         '''

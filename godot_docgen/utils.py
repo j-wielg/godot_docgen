@@ -13,6 +13,7 @@ STYLES = {
     "reset": "\x1b[0m"  # ]
 }
 
+INDENT = '    '
 
 def print_error(error: str, state) -> None:
     '''
@@ -25,13 +26,21 @@ def print_error(error: str, state) -> None:
         The error message to print
     state : State
         The global state of the program.
+
+    Notes
+    -----
+    This function uses the state object to decide how to format the
+    message. See the state object's documentation for more info.
     '''
     if state.error is None:
         return
+    indent = ''
+    if state.debug is not None:
+        indent = INDENT * state.indent_level
     if state.should_color and state.error in [sys.stdout, sys.stderr]:
-        print(f'{STYLES["red"]}{STYLES["bold"]}ERROR:{STYLES["regular"]} {error}{STYLES["reset"]}', file=state.error)
+        print(f'{indent}{STYLES["red"]}{STYLES["bold"]}ERROR:{STYLES["regular"]} {error}{STYLES["reset"]}', file=state.error)
     else:
-        print(f'ERROR: {error}', file=state.error)
+        print(f'{indent}ERROR: {error}', file=state.error)
     state.num_errors += 1
 
 
@@ -46,13 +55,21 @@ def print_warning(warning: str, state) -> None:
         The warning message to print
     state : State
         The global state of the program.
+
+    Notes
+    -----
+    This function uses the state object to decide how to format the
+    message. See the state object's documentation for more info.
     '''
     if state.warning is None:
         return
+    indent = ''
+    if state.debug is not None:
+        indent = INDENT * state.indent_level
     if state.should_color and state.warning in [sys.stdout, sys.stderr]:
-        print(f'{STYLES["yellow"]}{STYLES["bold"]}WARNING:{STYLES["regular"]} {warning}{STYLES["reset"]}', file=state.warning)
+        print(f'{indent}{STYLES["yellow"]}{STYLES["bold"]}WARNING:{STYLES["regular"]} {warning}{STYLES["reset"]}', file=state.warning)
     else:
-        print(f'WARNING: {warning}', file=state.warning)
+        print(f'{indent}WARNING: {warning}', file=state.warning)
     state.num_warnings += 1
 
 
@@ -66,25 +83,46 @@ def print_log(message: str, state) -> None:
         The message to display
     state : State
         The state of the program
+
+    Notes
+    -----
+    This function uses the state object to decide how to format the
+    message. See the state object's documentation for more info.
     '''
     if state.info is None:
         return
+    indent = ''
+    if state.debug is not None:
+        indent = INDENT * state.indent_level
     if state.info in [sys.stdout, sys.stderr]:
-        print(message, file=state.info)
+        print(indent + message, file=state.info)
     else:
-        print(f'INFO: {message}', file=state.info)
+        print(f'{indent}INFO: {message}', file=state.info)
 
 
 def print_debug(message: str, state) -> None:
     '''
-    Prints debug messages
+    Prints debug messages.
+
+    Parameters
+    ----------
+    message : str
+        The message to print.
+    state : State
+        The state of the program.
+
+    Notes
+    -----
+    This function uses the state object to decide how to format the
+    message. See the state object's documentation for more info.
     '''
     if state.debug is None:
         return
+    indent = INDENT * state.indent_level
     if state.debug in [sys.stdout, sys.stderr]:
-        print(message, file=state.info)
+        print(f'{indent}DEBUG: {message}', file=state.debug)
     else:
-        print(f'DEBUG: {message}', file=state.debug)
+        print(f'{indent}DEBUG: {message}', file=state.debug)
 
 
 def make_heading(title: str, underline: str, l10n: bool = True) -> str:
