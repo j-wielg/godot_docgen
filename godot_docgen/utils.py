@@ -26,10 +26,12 @@ def print_error(error: str, state) -> None:
     state : State
         The global state of the program.
     '''
-    if state.should_color:
-        print(f'{STYLES["red"]}{STYLES["bold"]}ERROR:{STYLES["regular"]} {error}{STYLES["reset"]}', file=sys.stderr)
+    if state.error is None:
+        return
+    if state.should_color and state.error in [sys.stdout, sys.stderr]:
+        print(f'{STYLES["red"]}{STYLES["bold"]}ERROR:{STYLES["regular"]} {error}{STYLES["reset"]}', file=state.error)
     else:
-        print(f'ERROR: {error}')
+        print(f'ERROR: {error}', file=state.error)
     state.num_errors += 1
 
 
@@ -45,10 +47,12 @@ def print_warning(warning: str, state) -> None:
     state : State
         The global state of the program.
     '''
-    if state.should_color:
-        print(f'{STYLES["yellow"]}{STYLES["bold"]}WARNING:{STYLES["regular"]} {warning}{STYLES["reset"]}', file=sys.stderr)
+    if state.warning is None:
+        return
+    if state.should_color and state.warning in [sys.stdout, sys.stderr]:
+        print(f'{STYLES["yellow"]}{STYLES["bold"]}WARNING:{STYLES["regular"]} {warning}{STYLES["reset"]}', file=state.warning)
     else:
-        print(f'WARNING: {warning}')
+        print(f'WARNING: {warning}', file=state.warning)
     state.num_warnings += 1
 
 
@@ -63,7 +67,24 @@ def print_log(message: str, state) -> None:
     state : State
         The state of the program
     '''
-    print(message)
+    if state.info is None:
+        return
+    if state.info in [sys.stdout, sys.stderr]:
+        print(message, file=state.info)
+    else:
+        print(f'INFO: {message}', file=state.info)
+
+
+def print_debug(message: str, state) -> None:
+    '''
+    Prints debug messages
+    '''
+    if state.debug is None:
+        return
+    if state.debug in [sys.stdout, sys.stderr]:
+        print(message, file=state.info)
+    else:
+        print(f'DEBUG: {message}', file=state.debug)
 
 
 def make_heading(title: str, underline: str, l10n: bool = True) -> str:
