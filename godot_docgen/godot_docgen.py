@@ -77,8 +77,11 @@ def load_files(state: State):
             scene_path = tscn.pop(i)
         if skipped == size:
             utils.print_error(f'Failed to parse {size} scenes:', state)
+            state.indent_level += 1
             for scene_path in tscn:
+                scene_path = Path(scene_path).relative_to(state.path)
                 utils.print_error(f'Could not parse {scene_path}', state)
+            state.indent_level -= 1
             break
     # Attaches scenes to scripts
     utils.print_log(
