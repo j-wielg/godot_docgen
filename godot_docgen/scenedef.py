@@ -8,6 +8,7 @@ from scriptdef import ScriptDef
 from state import State
 from typing import Optional, Union
 from pathlib import Path
+import utils
 
 # Regular expressions
 match_extres = re.compile(r'([^ ]+) = ExtResource\("(.+?)"\)')
@@ -89,6 +90,14 @@ class ConnectionDef(DefinitionBase):
         self.signal = None
 
 
+class NodeSkipped(Exception):
+    '''
+    Raised when a node matched a regular expression and is
+    not parsed.
+    '''
+    pass
+
+
 class NodeDef(DefinitionBase):
     '''
     Used to document a node within a Godot scene.
@@ -111,6 +120,7 @@ class NodeDef(DefinitionBase):
     type_name: TypeName = None
     state: State
     resources: list
+    skipped: bool = False
 
     def __init__(self, state: State):
         self.children = []
@@ -138,23 +148,38 @@ class NodeDef(DefinitionBase):
 
         If connecting a script is not possible, this method does nothing.
         '''
-        if self.script_path is None:
+        if self.skipped:
+            return
+        elif self.script_path is None:
             return
         elif self.script is not None:
             return
         path = self.script_path[6:]
+        # relative_path = str(Path(path).relative_to(self.state.path))
+        utils.print_debug(
+            f"Found script '{path}' in node '{self.name}'",
+            self.state)
+        self.state.indent_level += 1
         # Checks if the script has been documented
         script = self.state.scripts.get(path)
         if script is not None:
             self.script = script
+            utils.print_debug(
+                f"Attaching script '{path}' to node '{self.name}'",
+                self.state)
         # Otherwise, we have to check the .gd file itself
         else:
-            path = self.state.settings['path'].joinpath(path)
+            relative_path = path
+            path = self.state.path.joinpath(path)
             # TODO: Test edge cases with this parsing
             class_name = None
+            utils.print_debug(
+                f"Parsing '{relative_path}' for class definition...",
+                self.state)
             if not path.exists():
-                print(f'Error: Node {self.name} relies on nonexistent script {path}')
+                print(f'Error: Node {self.name} relies on nonexistent script {relative_path}')
                 self.state.num_errors += 1
+                self.state.indent_level -= 1
                 return
             with open(path, 'rt') as file:
                 for line in file:
@@ -168,6 +193,7 @@ class NodeDef(DefinitionBase):
                 if 'class_name' not in line:
                     print(f'Error: Node {self.name} relies on undocumented script {str(path)}')
                     self.state.num_errors += 1
+                    self.state.indent_level -= 1
                     return
                 matcher = re.compile(r'class_name\s+([^#\s]+)')
                 match = matcher.search(line)
@@ -180,14 +206,22 @@ class NodeDef(DefinitionBase):
             if class_name is None:
                 print(f'Error: Could not find a class name in {str(path)}')
                 self.state.num_errors += 1
+                self.state.indent_level -= 1
                 return
             elif class_name not in self.state.classes:
                 print(f'Error: Node {self.name} relies on undocumented class {class_name}')
                 return
+            utils.print_debug(
+                f"Found class '{class_name}' with script '{relative_path}'",
+                self.state)
+            utils.print_debug(
+                f"Attaching script '{relative_path}' to node '{self.name}'",
+                self.state)
             # Gets the script using the class name
             self.script = self.state.classes[class_name]
             # Updates the node's type
             self.type_name.type_name = class_name
+        self.state.indent_level -= 1
 
     def from_tscn_file(
             self,
@@ -195,7 +229,8 @@ class NodeDef(DefinitionBase):
             ext_res_map: dict[str, 'ResourceDef'],
             sub_res_map: dict[str, 'ResourceDef'],
             node_map: dict[str, 'NodeDef'],
-            line: str = None):
+            line: str = None,
+            skip: list[re.Pattern] = []):
         '''
         Generates a node's documentation from a tscn file.
 
@@ -212,6 +247,8 @@ class NodeDef(DefinitionBase):
             Maps the name of a node to its NodeDef object
         line : str, default = None
             The first line of the node definition.
+        skip : list[re.Pattern], default=[]
+            Nodes which match a pattern in the skip list will not be parsed.
 
         Raises
         ------
@@ -232,6 +269,10 @@ class NodeDef(DefinitionBase):
         node_info = tscn_to_dict(line)
         # Gets the node's name
         super().__init__('node', node_info['name'])
+        utils.print_debug(
+            f'Parsing node {self.name}',
+            self.state)
+        self.state.indent_level += 1
         # Finds the node's parent
         parent = node_info.get('parent')
         # Gets the path to the node
@@ -244,10 +285,36 @@ class NodeDef(DefinitionBase):
             path = f'{parent}/{self.name}'
         # Checks if this node is an instance override
         if path in node_map:
+            utils.print_debug(
+                f'Node {self.name} is an instance override. Copying node...',
+                self.state)
+            self.state.indent_level -= 1
             raise NodeExists(path)
         node_map[path] = self
+        # Finds the node's parent
         if parent is not None:
-            node_map[parent].children.append(self)
+            parent_node = node_map[parent]
+            if parent_node.skipped:
+                self.skipped = True
+                utils.print_debug(
+                    f"Parent '{parent}' has been skipped. Skipping node",
+                    self.state)
+                while line := file.readline().strip():
+                    pass
+                return line
+            parent_node.children.append(self)
+        # Checks if the node should be skipped
+        # This can only be done AFTER checking for instance override
+        for pattern in skip:
+            if pattern.fullmatch(self.name) is not None:
+                utils.print_debug(
+                    f'Skipping node {self.name}',
+                    self.state)
+                self.state.indent_level -= 1
+                self.skipped = True
+                while line := file.readline().strip():
+                    pass
+                return line
         # Gets the node's type
         # Note that if the node has a script attached, this might not
         # necessarily be the correct type.
@@ -294,7 +361,9 @@ class NodeDef(DefinitionBase):
                 try:
                     id = match_extres.search(line)[2]
                 except TypeError:
-                    print('ERROR: The program does not match internal scripts')
+                    utils.print_warning(
+                        f'Node {self.name} in scene {self.state.current_class.name} contains an internal script which will not be parsed',
+                        self.state)
                     continue
                 self.script_path = ext_res_map[id].path
             # Checks for external resources
@@ -305,6 +374,7 @@ class NodeDef(DefinitionBase):
             elif 'SubResource' in line:
                 id = match_subres.search(line)[3]
                 self.resources.append(sub_res_map[id])
+        self.state.indent_level -= 1
         return None
 
 
@@ -350,6 +420,12 @@ class SceneDef(DefinitionBase):
         It also requires scripts to have already been parsed, with their
         ScriptDef objects in `State.scripts` and `State.classes`
         '''
+        # Debug message
+        self.state.indent_level += 1
+        utils.print_debug(
+            f"Checking scene '{self.name}' for scripts",
+            self.state)
+        self.state.indent_level += 1
         # Runs depth-first search over the nodes
         frontier: list[NodeDef] = [self.root]
         while frontier:
@@ -366,6 +442,7 @@ class SceneDef(DefinitionBase):
                     continue
                 elif connection.name in script.signals:
                     connection.signal = script.signals[connection.name]
+        self.state.indent_level -= 2
 
     def parse_file(self, path: Path):
         '''
@@ -385,13 +462,34 @@ class SceneDef(DefinitionBase):
         to document a scene. Once the scripts have been documented, it
         is necessary to call `SceneDef.attach_scripts` to finish parsing.
         '''
-        with open(path, 'rt') as file:
-            self._parse_file(file)
-        project_path = self.state.settings['path']
+        # Sets the current scene
+        self.state.current_class = self
+        # Names the scene using the path name
+        super().__init__('scene', path.name[:-5].replace('_', ' ').title())
+        project_path = self.state.path
         scene_path = str(path.relative_to(project_path))
+        # Prints a debug message
+        self.state.indent_level += 1
+        utils.print_debug(
+            f"Parsing file '{str(scene_path)}'",
+            self.state)
+        self.state.indent_level += 1
+        # Checks whether the scene should be skipped
+        nodes = self.state.do_not_parse.get(scene_path)
+        if nodes == []:
+            utils.print_debug(
+                f"Skipping file '{str(scene_path)}'",
+                self.state)
+            self.state.indent_level -= 2
+            return
+        if not isinstance(nodes, list):
+            nodes = []
+        with open(path, 'rt') as file:
+            self._parse_file(file, nodes)
         self.state.scenes['res://' + scene_path] = self
+        self.state.indent_level -= 2
 
-    def _parse_file(self, scene_file: io.TextIOWrapper):
+    def _parse_file(self, scene_file: io.TextIOWrapper, skip: list[re.Pattern]):
         '''
         Internal function used in the `parse_file` method.
         '''
@@ -418,6 +516,11 @@ class SceneDef(DefinitionBase):
                 # SceneDef object it is associated with
                 if resource.type_name.type_name == 'PackedScene':
                     if resource.path not in self.state.scenes:
+                        utils.print_debug(
+                            f"Scene relies on external scene '{resource.path[6:]}'. Skipping...",
+                            self.state
+                        )
+                        self.state.indent_level -= 2
                         raise ScenesNotParsed
                     scene = self.state.scenes[resource.path]
                     ext_resources[id].scene = scene
@@ -465,28 +568,27 @@ class SceneDef(DefinitionBase):
         try:
             line = node.from_tscn_file(
                 scene_file, ext_resources,
-                sub_resources, nodes, line)
+                sub_resources, nodes, line, skip)
         except NodeExists as e:
             node: NodeDef = nodes.pop(e.path)
             node = node.copy()
             line = node.from_tscn_file(
                 scene_file, ext_resources,
-                sub_resources, nodes, line)
+                sub_resources, nodes, line, skip)
         self.root = node
-        super().__init__('scene', self.root.name)
         # Gets the other nodes
         while True:
             node: NodeDef = NodeDef(self.state)
             try:
                 line = node.from_tscn_file(
                     scene_file, ext_resources,
-                    sub_resources, nodes, line)
+                    sub_resources, nodes, line, skip)
             except NodeExists as e:
                 node: NodeDef = nodes.pop(e.path)
                 node = node.copy()
                 line = node.from_tscn_file(
                     scene_file, ext_resources,
-                    sub_resources, nodes, line)
+                    sub_resources, nodes, line, skip)
             if line is not None:
                 break
         while line:

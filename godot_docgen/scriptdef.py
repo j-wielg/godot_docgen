@@ -1,9 +1,14 @@
-from definitions import DefinitionBase, MethodDef, ConstantDef, PropertyDef, ParameterDef, EnumDef, MethodDef, SignalDef, AnnotationDef, ThemeItemDef, TypeName
+from definitions import DefinitionBase, MethodDef, ConstantDef, PropertyDef, ParameterDef, EnumDef, SignalDef, AnnotationDef, ThemeItemDef, TypeName
 from typing import OrderedDict, Optional
 from state import State
 import enum
+from pathlib import Path
 import xml.etree.ElementTree as ET
 import re
+import io
+import utils
+import rst_generation
+from godot_classes import GODOT_NATIVE_CLASSES
 
 
 class ScriptGroups(enum.Enum):
@@ -123,6 +128,22 @@ class ScriptDef(DefinitionBase):
         --------
         This method modifies state by adding a key-value pair to State.classes
         '''
+        self.state.indent_level += 1
+        relative_path = Path(filepath).relative_to(self.state.path)
+        utils.print_debug(
+            f"Parsing file '{str(relative_path)}'",
+            self.state
+        )
+        self.state.indent_level += 1
+        # Checks if the file is in do_not_parse
+        # If so, it is skipped
+        if str(relative_path) in self.state.do_not_parse:
+            utils.print_debug(
+                f"Skipping xml file '{str(relative_path)}'",
+                self.state
+            )
+            self.state.indent_level -= 2
+            return
         # Reads and parses the xml file
         with open(filepath, 'r') as file:
             tree = ET.parse(file)
@@ -164,7 +185,7 @@ class ScriptDef(DefinitionBase):
                 assert property.tag == "member"
                 property_def = PropertyDef(property)
                 if property_def.name in self.properties:
-                    print_error(f'{filepath}: Duplicate property "{property_def.name}".', self)
+                    utils.print_error(f'{filepath}: Duplicate property "{property_def.name}".', self)
                     continue
                 self.properties[property_def.name] = property_def
         # Finds the class methods
@@ -172,7 +193,8 @@ class ScriptDef(DefinitionBase):
         if methods is not None:
             for method in methods:
                 assert method.tag == "method"
-                method_def = MethodDef(method, "method")
+                method_def = MethodDef('temp')
+                method_def.from_xml(method, 'method')
                 # Checks for constructors
                 if method_def.name == '_init':
                     method_def.definition_name = "constructor"
@@ -189,7 +211,8 @@ class ScriptDef(DefinitionBase):
         if operators is not None:
             for operator in operators:
                 assert operator.tag == "operator"
-                op_def = MethodDef(operator, "operator")
+                op_def = MethodDef('temp')
+                op_def.from_xml(operator, 'operator')
                 if op_def.name not in self.operators:
                     self.operators[op_def.name] = []
                 self.operators[op_def.name].append(op_def)
@@ -232,3 +255,345 @@ class ScriptDef(DefinitionBase):
                 assert link.tag == 'link'
                 if link.text is not None:
                     self.tutorials.append((link.text.strip(), link.get("title", "")))
+        self.state.indent_level -= 2
+
+    def make_class_rst(self, f: io.TextIOWrapper):
+        '''
+        Takes the script, and turns it into a RST file.
+        '''
+        self.state.current_class = self.name
+        # Add keywords metadata.
+        if self.keywords is not None and self.keywords != "":
+            f.write(f".. meta::\n\t:keywords: {self.keywords}\n\n")
+        # Document reference id and header
+        f.write(f".. _class_{self.name}:\n\n")
+        f.write(utils.make_heading(self.name, "=", False))
+        # Documents deprecated and experimental warnings
+        f.write(rst_generation.make_deprecated_experimental(self, self.state))
+        # Documents inheritance tree
+        # Acsendants
+        if self.inherits:
+            inherits = self.inherits.strip()
+            f.write(f'**{utils.translate("Inherits:")}** ')
+            first = True
+            # Gets all documented ascendants
+            while inherits in self.state.classes:
+                if not first:
+                    f.write(" **<** ")
+                else:
+                    first = False
+
+                f.write(rst_generation.make_type(inherits, self.state))
+                inode = self.state.classes[inherits].inherits
+                if inode:
+                    inherits = inode.strip()
+                else:
+                    break
+            # Gets undocumented ascendants which are part of the Godot engine
+            if inherits in GODOT_NATIVE_CLASSES:
+                if not first:
+                    f.write(" **<** ")
+                f.write(rst_generation.make_type(inherits, self.state))
+            f.write("\n\n")
+        # Descendants
+        inherited: list[str] = []
+        for c in self.state.classes.values():
+            if c.inherits and c.inherits.strip() == self.name:
+                inherited.append(c.name)
+        if len(inherited):
+            f.write(f'**{utils.translate("Inherited By:")}** ')
+            for i, child in enumerate(inherited):
+                if i > 0:
+                    f.write(", ")
+                f.write(rst_generation.make_type(child, self.state))
+            f.write("\n\n")
+        # Brief description
+        has_description = False
+        if self.brief_description and self.brief_description.strip():
+            has_description = True
+            f.write(f"{rst_generation.format_text_block(self.brief_description.strip(), self, self.state)}\n\n")
+        # Extended description
+        if self.description and self.description.strip():
+            has_description = True
+            f.write(".. rst-class:: classref-introduction-group\n\n")
+            f.write(utils.make_heading("Description", "-"))
+            f.write(f"{rst_generation.format_text_block(self.description.strip(), self, self.state)}\n\n")
+        # If no description is given, prints a silly message
+        if not has_description:
+            f.write(".. container:: contribute\n\n\t")
+            f.write(
+                utils.translate(
+                    "There is currently no description for this class."
+                ) + "\n\n"
+            )
+        # Links any external tutorials
+        if len(self.tutorials) > 0:
+            f.write(".. rst-class:: classref-introduction-group\n\n")
+            f.write(utils.make_heading("Tutorials", "-"))
+
+            for url, title in self.tutorials:
+                f.write(f"- {rst_generation.make_link(url, title)}\n\n")
+
+        # Creates reference tables
+        # Reused container for reference tables.
+        ml: list[tuple[str, ...]] = []
+        # Properties reference table
+        if len(self.properties) > 0:
+            f.write(".. rst-class:: classref-reftable-group\n\n")
+            f.write(utils.make_heading("Properties", "-"))
+
+            ml = []
+            for property_def in self.properties.values():
+                type_rst = property_def.type_name.to_rst(self.state)
+                default = property_def.default_value
+                if default is not None and property_def.overrides:
+                    ref = f":ref:`{property_def.overrides}<class_{property_def.overrides}_property_{property_def.name}>`"
+                    # Not using translate() for now as it breaks table formatting.
+                    ml.append((type_rst, property_def.name, f"{default} (overrides {ref})"))
+                else:
+                    ref = f":ref:`{property_def.name}<class_{self.name}_property_{property_def.name}>`"
+                    ml.append((type_rst, ref, default))
+
+            rst_generation.format_table(f, ml, True)
+        # Constructors table
+        if len(self.constructors) > 0:
+            f.write(".. rst-class:: classref-reftable-group\n\n")
+            f.write(utils.make_heading("Constructors", "-"))
+
+            ml = []
+            for method_list in self.constructors.values():
+                for m in method_list:
+                    ml.append(m.make_signature(self, "constructor", self.state))
+
+            rst_generation.format_table(f, ml)
+        # Methods table
+        if len(self.methods) > 0:
+            f.write(".. rst-class:: classref-reftable-group\n\n")
+            f.write(utils.make_heading("Methods", "-"))
+
+            ml = []
+            for method_list in self.methods.values():
+                for m in method_list:
+                    ml.append(m.make_signature(self, "method", self.state))
+
+            rst_generation.format_table(f, ml)
+        # TODO: Possibly add theme items here?
+
+        # Descriptions
+
+        # Signal descriptions
+        if len(self.signals) > 0:
+            f.write(rst_generation.make_separator(True))
+            f.write(".. rst-class:: classref-descriptions-group\n\n")
+            f.write(utils.make_heading("Signals", "-"))
+            index = 0
+            for signal in self.signals.values():
+                signal: SignalDef
+                if index != 0:
+                    f.write(rst_generation.make_separator())
+                # Create signal signature and anchor point.
+                f.write(f".. _class_{self.name}_signal_{signal.name}:\n\n")
+                f.write(".. rst-class:: classref-signal\n\n")
+                signature = signal.make_signature(self, self.state)
+                f.write(f"{signature}\n\n")
+                # Add signal description, or a call to action if it's missing.
+                f.write(
+                    rst_generation.make_deprecated_experimental(signal, self.state)
+                )
+
+                if signal.description is not None and signal.description.strip() != "":
+                    f.write(f"{rst_generation.format_text_block(signal.description.strip(), signal, self.state)}\n\n")
+                elif signal.deprecated is None and signal.experimental is None:
+                    f.write(".. container:: contribute\n\n\t")
+                    f.write(
+                        utils.translate(
+                            "There is currently no description for this signal"
+                        ) + "\n\n"
+                    )
+                index += 1
+        # Enumeration descriptions
+        if len(self.enums) > 0:
+            f.write(rst_generation.make_separator(True))
+            f.write(".. rst-class:: classref-descriptions-group\n\n")
+            f.write(utils.make_heading("Enumerations", "-"))
+
+            index = 0
+
+            for e in self.enums.values():
+                if index != 0:
+                    f.write(rst_generation.make_separator())
+
+                # Create enumeration signature and anchor point.
+
+                f.write(f".. _enum_{self.name}_{e.name}:\n\n")
+                f.write(".. rst-class:: classref-enumeration\n\n")
+
+                if e.is_bitfield:
+                    f.write(f"flags **{e.name}**:\n\n")
+                else:
+                    f.write(f"enum **{e.name}**:\n\n")
+
+                for value in e.values.values():
+                    # Also create signature and anchor point for each enum constant.
+                    f.write(f".. _class_{self.name}_constant_{value.name}:\n\n")
+                    f.write(".. rst-class:: classref-enumeration-constant\n\n")
+                    f.write(f"{e.type_name.to_rst(self.state)} **{value.name}** = ``{value.value}``\n\n")
+                    # Add enum constant description.
+                    f.write(
+                        rst_generation.make_deprecated_experimental(
+                            value, self.state
+                        )
+                    )
+                    if value.text is not None and value.text.strip() != "":
+                        f.write(f"{rst_generation.format_text_block(value.text.strip(), value, self.state)}")
+                    elif value.deprecated is None and value.experimental is None:
+                        f.write(".. container:: contribute\n\n\t")
+                        f.write(
+                            utils.translate(
+                                "There is currently no description for this enum."
+                            ) + "\n\n"
+                        )
+
+                    f.write("\n\n")
+
+                index += 1
+        # Constant descriptions
+        if len(self.constants) > 0:
+            f.write(rst_generation.make_separator(True))
+            f.write(".. rst-class:: classref-descriptions-group\n\n")
+            f.write(utils.make_heading("Constants", "-"))
+            for constant in self.constants.values():
+                # Create constant signature and anchor point.
+                f.write(f".. _class_{class_name}_constant_{constant.name}:\n\n")
+                f.write(".. rst-class:: classref-constant\n\n")
+                f.write(f"**{constant.name}** = ``{constant.value}``\n\n")
+                # Add constant description.
+                f.write(rst_generation.make_deprecated_experimental(
+                    constant, self.state))
+                if constant.text is not None and constant.text.strip() != "":
+                    f.write(f"{rst_generation.format_text_block(constant.text.strip(), constant, self.state)}")
+                elif constant.deprecated is None and constant.experimental is None:
+                    f.write(".. container:: contribute\n\n\t")
+                    f.write(
+                        utils.translate(
+                            "There is currently no description for this constant"
+                        ) + "\n\n"
+                    )
+                f.write("\n\n")
+        # TODO: Add annotation description.
+        # This may not be necessary, since Godot currently does 
+        # not track annotations
+        # Property descriptions
+        if any(not p.overrides for p in self.properties.values()) > 0:
+            f.write(rst_generation.make_separator(True))
+            f.write(".. rst-class:: classref-descriptions-group\n\n")
+            f.write(utils.make_heading("Property Descriptions", "-"))
+            index = 0
+            for property_def in self.properties.values():
+                property_def: PropertyDef
+                if property_def.overrides:
+                    continue
+                if index != 0:
+                    f.write(rst_generation.make_separator())
+                # Create property signature and anchor point.
+                f.write(f".. _class_{self.name}_property_{property_def.name}:\n\n")
+                f.write(".. rst-class:: classref-property\n\n")
+                property_default = ""
+                if property_def.default_value is not None:
+                    property_default = f" = {property_def.default_value}"
+                f.write(f"{property_def.type_name.to_rst(self.state)} **{property_def.name}**{property_default}\n\n")
+                # Create property setter and getter records.
+                property_setget = ""
+                if property_def.setter is not None and not property_def.setter.startswith("_"):
+                    property_setter = property_def.make_setter_signature(
+                        self, self.state
+                    )
+                    property_setget += f"- {property_setter}\n"
+
+                if property_def.getter is not None and not property_def.getter.startswith("_"):
+                    # property_getter = make_getter_signature(class_def, property_def, state)
+                    property_getter = property_def.make_getter_signature(
+                        self, self.state
+                    )
+                    property_setget += f"- {property_getter}\n"
+
+                if property_setget != "":
+                    f.write(".. rst-class:: classref-property-setget\n\n")
+                    f.write(property_setget)
+                    f.write("\n")
+
+                # Add property description, or a call to action if it's missing.
+                f.write(rst_generation.make_deprecated_experimental(property_def, self.state))
+                if property_def.text is not None and property_def.text.strip() != "":
+                    f.write(f"{rst_generation.format_text_block(property_def.text.strip(), property_def, self.state)}\n\n")
+                elif property_def.deprecated is None and property_def.experimental is None:
+                    f.write(".. container:: contribute\n\n\t")
+                    f.write(
+                        utils.translate(
+                            "There is currently no description for this property."
+                        ) + "\n\n"
+                    )
+                index += 1
+        # Constructor description
+        if len(self.constructors) > 0:
+            f.write(rst_generation.make_separator(True))
+            f.write(".. rst-class:: classref-descriptions-group\n\n")
+            f.write(utils.make_heading("Constructor Descriptions", "-"))
+            index = 0
+            for method_list in self.constructors.values():
+                for i, m in enumerate(method_list):
+                    if index != 0:
+                        f.write(rst_generation.make_separator())
+                    # Create constructor signature and anchor point.
+                    if i == 0:
+                        f.write(f".. _class_{self.name}_constructor_{m.name}:\n\n")
+                    f.write(".. rst-class:: classref-constructor\n\n")
+                    m: MethodDef
+                    ret_type, signature = m.make_signature(self, '', self.state)
+                    f.write(f"{ret_type} {signature}\n\n")
+                    # Add constructor description, or a call to action if it's missing.
+                    f.write(rst_generation.make_deprecated_experimental(m, self.state))
+                    if m.description is not None and m.description.strip() != "":
+                        f.write(f"{rst_generation.format_text_block(m.description.strip(), m, self.state)}\n\n")
+                    elif m.deprecated is None and m.experimental is None:
+                        f.write(".. container:: contribute\n\n\t")
+                        f.write(
+                            utils.translate(
+                                "There is currently no description for this constructor."
+                            ) + "\n\n"
+                        )
+                    index += 1
+        # Method description
+        if len(self.methods) > 0:
+            f.write(rst_generation.make_separator(True))
+            f.write(".. rst-class:: classref-descriptions-group\n\n")
+            f.write(utils.make_heading("Method Descriptions", "-"))
+            index = 0
+            for method_list in self.methods.values():
+                for i, m in enumerate(method_list):
+                    if index != 0:
+                        f.write(rst_generation.make_separator())
+                    # Create method signature and anchor point.
+                    if i == 0:
+                        method_qualifier = ""
+                        if m.name.startswith("_"):
+                            method_qualifier = "private_"
+                        f.write(f".. _class_{self.name}_{method_qualifier}method_{m.name}:\n\n")
+                    f.write(".. rst-class:: classref-method\n\n")
+                    m: MethodDef
+                    ret_type, signature = m.make_signature(self, '', self.state)
+                    f.write(f"{ret_type} {signature}\n\n")
+                    # Add method description, or a call to action if it's missing.
+                    f.write(rst_generation.make_deprecated_experimental(m, self.state))
+                    if m.description is not None and m.description.strip() != "":
+                        f.write(f"{rst_generation.format_text_block(m.description.strip(), m, self.state)}\n\n")
+                    elif m.deprecated is None and m.experimental is None:
+                        f.write(".. container:: contribute\n\n\t")
+                        f.write(
+                            utils.translate(
+                                "There is currently no description for this method."
+                            ) + "\n\n"
+                        )
+
+                    index += 1
+        f.write(rst_generation.make_footer())
